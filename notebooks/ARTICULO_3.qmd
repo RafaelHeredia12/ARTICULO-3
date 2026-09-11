@@ -1,0 +1,120 @@
+---
+title: "TÍTULO: Clasificación del Impacto de Noticias Financieras mediante Minería de Texto"
+author:
+  - "Rafael Santamaría Heredia | A01646667"
+  - "Grethel Hernández Olivares | A01640912"
+  - "Matías Alfredo Hidalgo Guzmán | A01641323"
+  - "Daniel Rodríguez Peralta | A01646867"
+format:
+  html:
+    toc: true
+    html-math-method: katex
+    embed-resources: true
+    self-contained-math: true
+    df-print: kable
+editor: source
+---
+
+```{r setup}
+#| include: false
+library(dplyr)
+library(stringr)
+library(tidytext)
+library(Matrix)
+library(knitr)
+
+# Resultados precalculados por los scripts 01-0N (ir agregando conforme
+# se generen: modelo(s) ajustado(s), métricas de desempeño, etc.)
+features <- readRDS("../data/processed/features_split.rds")
+```
+
+## Abstract
+
+<!-- TODO: 1-2 párrafos. Incluir: dataset (financial_news.csv, N titulares),
+     variable objetivo y su recodificación binaria (Impacto Alto vs
+     Otro/Bajo), enfoque de minería de texto (tokenización, DTM dispersa
+     + variables adicionales), modelo(s) de clasificación aplicado(s) y
+     el resultado principal (métrica de desempeño clave). -->
+
+## Introducción
+
+<!-- TODO: contexto y motivación del problema — por qué importa anticipar
+     el nivel de impacto de una noticia financiera a partir de su
+     titular y variables asociadas (sentimiento, sector, índice, etc.). -->
+
+<!-- TODO: qué aporta un enfoque de minería de texto/NLP frente a solo
+     usar las variables estructuradas (sentimiento, sector, volumen...). -->
+
+<!-- TODO: objetivo explícito del trabajo. -->
+
+<!-- TODO: párrafo de organización del artículo (roadmap de las
+     secciones Métodos, Aplicación de los métodos y Conclusiones). -->
+
+## Métodos
+
+### Datos
+
+<!-- TODO: describir financial_news.csv (variables, N filas) apoyándose
+     en dict_financial_news.csv. Mencionar la variable objetivo
+     Impact_Level (High/Medium/Low) y su proporción de nulos por
+     columna según el diccionario. -->
+
+### Preprocesamiento y recodificación del objetivo
+
+<!-- TODO: distribución original de Impact_Level antes de tocarla;
+     justificación de la recodificación a binaria con case_when()
+     (Impacto Alto vs Impacto Otro/Bajo); manejo de titulares con
+     Headline faltante (~5%, ver diccionario). -->
+
+### Limpieza de texto y tokenización
+
+<!-- TODO: limpieza de Headline con stringr (minúsculas, puntuación/
+     números, espacios) referenciando la documentación de stringr;
+     tokenización con tidytext::unnest_tokens() y remoción de stop
+     words en inglés (stop_words), siguiendo Text Mining with R
+     (Silge & Robinson, tidytextmining.com). -->
+
+### Matriz documento-término y variables adicionales
+
+<!-- TODO: construcción de la sparse document-term matrix (filas =
+     titulares, columnas = vocabulario, valores = frecuencia) con
+     cast_sparse(); integración de Sentiment, Sector y Market_Index
+     como features adicionales junto con la DTM. -->
+
+### Separación entrenamiento/prueba
+
+<!-- TODO: proporción del split, semilla fija (set.seed(), no
+     set_seed()) y tamaño resultante de train/test. -->
+
+### Modelo(s) de clasificación
+
+<!-- TODO: describir el/los modelo(s) usado(s) sobre la matriz dispersa
+     (p. ej. regresión logística regularizada, random forest, naive
+     bayes...) y la métrica de evaluación elegida. -->
+
+## Aplicación de los métodos
+
+<!-- TODO: resultados del/los modelo(s) sobre el conjunto de prueba
+     (matriz de confusión, accuracy/precision/recall/F1, curva ROC,
+     etc.). -->
+
+<!-- TODO: interpretación — términos/variables más relevantes para
+     distinguir Impacto Alto de Otro/Bajo. -->
+
+## Conclusiones
+
+<!-- TODO: síntesis de hallazgos principales, limitaciones del enfoque
+     y posibles extensiones. -->
+
+## Referencias
+
+Silge, J., & Robinson, D. (2017). *Text Mining with R: A Tidy Approach*. O'Reilly Media. https://www.tidytextmining.com/
+
+Wickham, H. (2023). *stringr: Simple, Consistent Wrappers for Common String Operations*. https://stringr.tidyverse.org/
+
+<!-- TODO: agregar referencia de la fuente/origen del dataset
+     financial_news.csv y cualquier otra literatura citada. -->
+
+---
+
+[Repositorio del proyecto](https://github.com/RafaelHeredia12/ARTICULO-3)
