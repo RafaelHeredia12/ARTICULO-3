@@ -1,0 +1,13 @@
+Column Name,Data Type,Description,Sample Values,Null Values
+Date,Date,Publication date of the financial news,"2025-05-21, 2025-07-18",No
+Headline,String,Financial news headlines related to market events,"""Tech Giant's New Product Launch Sparks Sector-Wide Gains""",~5%
+Source,String,News publication source,"Reuters, Bloomberg, CNBC, Financial Times",No
+Market_Event,String,Category of market event driving the news,"Stock Market Crash, Interest Rate Change, IPO Launch",No
+Market_Index,String,Associated stock market index,"S&P 500, NSE Nifty, DAX, FTSE 100",No
+Index_Change_Percent,Float,Percentage change in market index (-5% to +5%),"3.52, -4.33, 0.15",~5%
+Trading_Volume,Float,Trading volume in millions (1M to 500M),"166.45, 420.89, 76.55",No
+Sentiment,String,News sentiment classification,"Positive, Neutral, Negative",~5%
+Sector,String,Business sector affected by the news,"Technology, Finance, Healthcare, Energy",No
+Impact_Level,String,Expected market impact intensity,"High, Medium, Low",No
+Related_Company,String,Major companies mentioned in the news,"Apple Inc., Goldman Sachs, Tesla, JP Morgan Chase",No
+News_Url,String,Source URL for the news article,https://www.reuters.com/markets/stocks/…,~5%
