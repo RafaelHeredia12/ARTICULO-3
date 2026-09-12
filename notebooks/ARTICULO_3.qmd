@@ -1,5 +1,5 @@
 ---
-title: "TÍTULO: Clasificación del Impacto de Noticias Financieras mediante Minería de Texto"
+title: "Clasificación del Impacto de Noticias Financieras mediante Minería de Texto"
 author:
   - "Rafael Santamaría Heredia | A01646667"
   - "Grethel Hernández Olivares | A01640912"
@@ -22,98 +22,196 @@ library(stringr)
 library(tidytext)
 library(Matrix)
 library(knitr)
+library(readr)
+library(tidyr)
+library(naivebayes)
 
-# Resultados precalculados por los scripts 01-0N (ir agregando conforme
-# se generen: modelo(s) ajustado(s), métricas de desempeño, etc.)
-features <- readRDS("../data/processed/features_split.rds")
+features   <- readRDS("../data/processed/features_split.rds")
+resultados <- readRDS("../data/processed/resultados_modelo.rds")
+
+dict <- read_csv("../data/raw/dict_financial_news.csv", show_col_types = FALSE)
+
+raw <- read_csv(
+  "../data/raw/financial_news.csv",
+  col_types = cols(
+    Date = col_date(format = "%d/%m/%Y"),
+    Index_Change_Percent = col_double(),
+    Trading_Volume = col_double(),
+    .default = col_character()
+  )
+)
 ```
 
 ## Abstract
 
-<!-- TODO: 1-2 párrafos. Incluir: dataset (financial_news.csv, N titulares),
-     variable objetivo y su recodificación binaria (Impacto Alto vs
-     Otro/Bajo), enfoque de minería de texto (tokenización, DTM dispersa
-     + variables adicionales), modelo(s) de clasificación aplicado(s) y
-     el resultado principal (métrica de desempeño clave). -->
+Los modelos financieros tradicionales se apoyan casi exclusivamente en series de tiempo y variables numéricas estructuradas, dejando de lado una fuente de información que en la práctica llega primero: el titular de la noticia. En este trabajo construimos un clasificador naïve Bayes para predecir el nivel de impacto de una noticia financiera (`Impact_Level`: *High*, *Medium*, *Low*) a partir de su titular, apoyándonos en un pipeline de minería de texto en R. Usando el conjunto `financial_news.csv` (3,024 titulares publicados entre febrero y agosto de 2025), recodificamos el objetivo a una variable binaria (*Impacto Alto* vs. *Impacto Otro/Bajo*), tokenizamos los titulares con `tidytext`, construimos una matriz documento-término dispersa y la combinamos con las variables `Sentiment`, `Sector` y `Market_Index`. Sobre esta matriz entrenamos un naïve Bayes con distribución Poisson, evaluado sobre un 20% de prueba (n = 576). El modelo obtuvo una exactitud de 0.630, precisión de 0.362, recall de 0.293 y F1 de 0.324 para la clase *Impacto Alto* — por debajo de la estrategia trivial de predecir siempre la clase mayoritaria (0.698), aunque por encima de un clasificador aleatorio ponderado por las proporciones reales (0.578). Un análisis de independencia adicional mostró que ni el cambio porcentual del índice bursátil ni el sentimiento reportado se relacionan de forma estadísticamente significativa con `Impact_Level` (p = 0.501 y p = 0.912, respectivamente), lo que sugiere que el desempeño modesto del modelo refleja una limitación de señal en los datos disponibles más que una deficiencia del enfoque de clasificación empleado.
 
 ## Introducción
 
-<!-- TODO: contexto y motivación del problema — por qué importa anticipar
-     el nivel de impacto de una noticia financiera a partir de su
-     titular y variables asociadas (sentimiento, sector, índice, etc.). -->
+Los eventos que mueven a los mercados financieros —un cambio directivo, una crisis de reputación, una demanda legal, un lanzamiento estratégico— rara vez se anuncian primero como una cifra. Se anuncian como una noticia, y esa noticia circula como texto no estructurado antes de traducirse en cualquier movimiento medible de un índice bursátil. Diversos estudios han mostrado que el texto de noticias financieras puede contener información predictiva sobre el comportamiento del mercado que no está capturada por completo en los datos numéricos estructurados [1]. A partir de esta idea, la minería de texto y el procesamiento de lenguaje natural (NLP) se han consolidado como un área activa de investigación para extraer dicha señal a partir de titulares y artículos financieros, empleando desde modelos probabilísticos simples como naïve Bayes hasta arquitecturas de aprendizaje profundo [2].
 
-<!-- TODO: qué aporta un enfoque de minería de texto/NLP frente a solo
-     usar las variables estructuradas (sentimiento, sector, volumen...). -->
+Sin embargo, revisiones sistemáticas recientes de esta literatura destacan que el desempeño de estos modelos varía ampliamente según la calidad y especificidad del corpus de noticias disponible, y que buena parte del reto no está en el algoritmo de clasificación en sí, sino en qué tanta señal predictiva contiene realmente el texto respecto a la variable que se busca predecir [3].
 
-<!-- TODO: objetivo explícito del trabajo. -->
+Este trabajo se inserta en esa línea de investigación: implementamos un clasificador naïve Bayes que categoriza el nivel de impacto de noticias financieras a partir de sus titulares, combinando técnicas de minería de texto (tokenización, matrices documento-término dispersas) con variables estructuradas adicionales (sentimiento, sector, índice bursátil asociado). A diferencia de trabajos que asumen de entrada que el texto disponible es informativo, aquí evaluamos explícitamente esa suposición antes de interpretar los resultados del modelo, contrastando el desempeño del clasificador contra un diagnóstico de independencia entre la variable objetivo y las variables estructuradas del conjunto de datos.
 
-<!-- TODO: párrafo de organización del artículo (roadmap de las
-     secciones Métodos, Aplicación de los métodos y Conclusiones). -->
+El resto del artículo se organiza como sigue. La sección de Métodos describe el conjunto de datos, el preprocesamiento del texto, la construcción de las variables predictoras y la especificación del modelo. La sección de Resultados reporta el desempeño del clasificador y los términos más relevantes para distinguir cada clase, sin interpretarlos. La Discusión interpreta esos hallazgos a la luz de la literatura relacionada. Cerramos con las conclusiones, las implicaciones prácticas para un inversionista, y recomendaciones para trabajo futuro propio y de otros estudios relacionados.
 
 ## Métodos
 
 ### Datos
 
-<!-- TODO: describir financial_news.csv (variables, N filas) apoyándose
-     en dict_financial_news.csv. Mencionar la variable objetivo
-     Impact_Level (High/Medium/Low) y su proporción de nulos por
-     columna según el diccionario. -->
+El conjunto `financial_news.csv` contiene `r nrow(raw)` titulares de noticias financieras publicados entre febrero y agosto de 2025, con las siguientes variables (ver diccionario de datos):
+
+```{r datos-dict}
+#| echo: false
+dict |>
+  select(`Column Name`, `Data Type`, Description, `Null Values`) |>
+  kable(caption = "Diccionario de datos de financial_news.csv")
+```
+
+La variable objetivo, `Impact_Level`, distingue tres niveles (*High*, *Medium*, *Low*) con una distribución original razonablemente balanceada:
+
+```{r datos-target}
+#| echo: false
+raw |>
+  count(Impact_Level) |>
+  mutate(prop = round(n / sum(n), 3)) |>
+  kable(caption = "Distribución original de Impact_Level")
+```
+
+Consistente con el diccionario, varias columnas presentan un porcentaje de valores nulos cercano al 5%, incluyendo `Headline`, `Index_Change_Percent`, `Sentiment` y `News_Url`.
+
+### Análisis exploratorio: ¿qué tanto explican las variables estructuradas a `Impact_Level`?
+
+Antes de invertir en un pipeline de minería de texto, vale la pena preguntar si las variables estructuradas ya disponibles (cambio porcentual del índice, volumen de operación, sentimiento) son suficientes para explicar `Impact_Level`. Si lo fueran, el texto del titular aportaría poco valor adicional.
+
+```{r diag-anova}
+#| echo: false
+raw |>
+  mutate(abs_change = abs(Index_Change_Percent)) |>
+  group_by(Impact_Level) |>
+  summarise(
+    media_cambio_pct = mean(abs_change, na.rm = TRUE),
+    sd_cambio_pct    = sd(abs_change, na.rm = TRUE),
+    media_volumen    = mean(Trading_Volume, na.rm = TRUE),
+    .groups = "drop"
+  ) |>
+  kable(digits = 2, caption = "Cambio de índice y volumen por nivel de impacto")
+
+anova_cambio <- aov(abs(Index_Change_Percent) ~ Impact_Level, data = raw)
+```
+
+Una prueba ANOVA de una vía no encuentra diferencias estadísticamente significativas en la magnitud del cambio porcentual del índice entre los tres niveles de `Impact_Level` (F(2, 2860) = `r round(summary(anova_cambio)[[1]][["F value"]][1], 3)`, p = `r round(summary(anova_cambio)[[1]][["Pr(>F)"]][1], 3)`).
+
+```{r diag-chisq}
+#| echo: false
+tabla_sent <- table(raw$Impact_Level, raw$Sentiment)
+chi_sent <- chisq.test(tabla_sent)
+
+raw |>
+  filter(!is.na(Sentiment)) |>
+  count(Impact_Level, Sentiment) |>
+  group_by(Impact_Level) |>
+  mutate(prop = round(n / sum(n), 3)) |>
+  select(-n) |>
+  pivot_wider(names_from = Sentiment, values_from = prop) |>
+  kable(caption = "Proporción de sentimiento por nivel de impacto")
+```
+
+De forma similar, una prueba chi-cuadrada de independencia entre `Impact_Level` y `Sentiment` tampoco rechaza la hipótesis de independencia (χ²(`r chi_sent$parameter`) = `r round(chi_sent$statistic, 3)`, p = `r round(chi_sent$p.value, 3)`). Este diagnóstico se retoma en la sección de Discusión para contextualizar el desempeño del modelo.
 
 ### Preprocesamiento y recodificación del objetivo
 
-<!-- TODO: distribución original de Impact_Level antes de tocarla;
-     justificación de la recodificación a binaria con case_when()
-     (Impacto Alto vs Impacto Otro/Bajo); manejo de titulares con
-     Headline faltante (~5%, ver diccionario). -->
+Para simplificar el modelado y evitar una comparación de tres clases con fronteras poco definidas entre *Medium* y *Low*, recodificamos `Impact_Level` a una variable binaria con `case_when()`: *Impacto Alto* (antes *High*) vs. *Impacto Otro/Bajo* (antes *Medium* o *Low*). Los titulares con `Headline` faltante (~5% del total, ver diccionario) se excluyeron del análisis, dejando `r nrow(raw) - sum(is.na(raw$Headline))` observaciones.
 
 ### Limpieza de texto y tokenización
 
-<!-- TODO: limpieza de Headline con stringr (minúsculas, puntuación/
-     números, espacios) referenciando la documentación de stringr;
-     tokenización con tidytext::unnest_tokens() y remoción de stop
-     words en inglés (stop_words), siguiendo Text Mining with R
-     (Silge & Robinson, tidytextmining.com). -->
+Cada titular se normalizó con funciones de `stringr` [4]: conversión a minúsculas, eliminación de puntuación y dígitos, y colapso de espacios en blanco. Posteriormente se tokenizó con `tidytext::unnest_tokens()`, obteniendo una palabra por renglón, y se removieron las palabras vacías (*stop words*) en inglés mediante el dataset integrado `stop_words`, siguiendo el enfoque de *Text Mining with R* [5]. Se descartaron adicionalmente tokens de longitud menor o igual a dos caracteres para reducir ruido residual.
 
 ### Matriz documento-término y variables adicionales
 
-<!-- TODO: construcción de la sparse document-term matrix (filas =
-     titulares, columnas = vocabulario, valores = frecuencia) con
-     cast_sparse(); integración de Sentiment, Sector y Market_Index
-     como features adicionales junto con la DTM. -->
+A partir de los tokens resultantes se construyó una matriz documento-término dispersa con `cast_sparse()` (filas = titulares, columnas = vocabulario retenido, valores = frecuencia de cada palabra en ese titular). Esta matriz se combinó con variables dummy (0/1) derivadas de `Sentiment`, `Sector` y `Market_Index` mediante `sparse.model.matrix()`, resultando en una matriz de `r ncol(features$train_x)` predictores en total.
 
 ### Separación entrenamiento/prueba
 
-<!-- TODO: proporción del split, semilla fija (set.seed(), no
-     set_seed()) y tamaño resultante de train/test. -->
+La matriz combinada se dividió en un conjunto de entrenamiento (80%) y uno de prueba (20%) con semilla fija (`set.seed(101)`), obteniendo `r nrow(features$train_x)` observaciones de entrenamiento y `r nrow(features$test_x)` de prueba.
 
-### Modelo(s) de clasificación
+### Modelo de clasificación
 
-<!-- TODO: describir el/los modelo(s) usado(s) sobre la matriz dispersa
-     (p. ej. regresión logística regularizada, random forest, naive
-     bayes...) y la métrica de evaluación elegida. -->
+Se entrenó un clasificador naïve Bayes con la función `naive_bayes()` del paquete `naivebayes` [6]. Dado que todos los predictores son conteos no negativos (frecuencia de palabras y variables dummy 0/1), se utilizó `usepoisson = TRUE`: cada predictor se modela con una distribución Poisson condicional a la clase, en lugar del supuesto Gaussiano por defecto — mucho menos adecuado para una matriz mayormente dispersa (valores cero). Se aplicó suavizado de Laplace (`laplace = 1`) para evitar tasas estimadas de cero en palabras del vocabulario ausentes en alguna clase durante el entrenamiento. Por una limitación de la función genérica `naive_bayes()` (que internamente coacciona el insumo a `data.frame` y por tanto no admite matrices dispersas de clase `dgCMatrix`), la matriz de predictores se convirtió a una matriz densa de tipo entero antes del ajuste; dado el tamaño reducido del vocabulario retenido, esta conversión no representó un costo computacional relevante.
 
-## Aplicación de los métodos
+## Resultados
 
-<!-- TODO: resultados del/los modelo(s) sobre el conjunto de prueba
-     (matriz de confusión, accuracy/precision/recall/F1, curva ROC,
-     etc.). -->
+A continuación se presentan los resultados obtenidos al evaluar el clasificador naïve Bayes sobre el conjunto de prueba (n = 576), junto con los términos y variables que el modelo identificó como más discriminantes entre clases.
 
-<!-- TODO: interpretación — términos/variables más relevantes para
-     distinguir Impacto Alto de Otro/Bajo. -->
+```{r resultados-metricas}
+#| echo: false
+resultados$matriz_confusion |>
+  kable(caption = "Matriz de confusión (test set, n = 576)")
+
+resultados$metricas |>
+  kable(caption = "Métricas de desempeño para la clase Impacto Alto")
+```
+
+```{r resultados-baselines}
+#| echo: false
+baseline_mayoritaria <- round(sum(resultados$matriz_confusion["Impacto Otro/Bajo", ]) / sum(resultados$matriz_confusion), 3)
+prop_alto <- sum(resultados$matriz_confusion["Impacto Alto", ]) / sum(resultados$matriz_confusion)
+baseline_aleatorio <- round(prop_alto^2 + (1 - prop_alto)^2, 3)
+```
+
+Como referencia, la estrategia de predecir siempre la clase mayoritaria (*Impacto Otro/Bajo*) habría obtenido una exactitud de `r baseline_mayoritaria` en este mismo conjunto de prueba, y un clasificador aleatorio que respetara las proporciones reales de clase (`Impacto Alto` = `r round(prop_alto*100,1)`%) tendría una exactitud esperada de `r baseline_aleatorio`.
+
+```{r resultados-terminos}
+#| echo: false
+tibble(termino = names(resultados$top_alto), log_ratio = round(resultados$top_alto, 3)) |>
+  kable(caption = "Top 15 términos/variables asociados con Impacto Alto (razón de tasas log)")
+
+tibble(termino = names(resultados$top_bajo), log_ratio = round(resultados$top_bajo, 3)) |>
+  kable(caption = "Top 15 términos/variables asociados con Impacto Otro/Bajo (razón de tasas log)")
+```
+
+De los 174 titulares de *Impacto Alto* en el conjunto de prueba, el modelo clasificó correctamente 51 y de forma incorrecta 123. De los 402 titulares de *Impacto Otro/Bajo*, 312 se clasificaron correctamente y 90 de forma incorrecta.
+
+## Discusión
+
+**Sobre el desempeño global.** La exactitud obtenida (0.630) es inferior a la de la estrategia trivial de predecir siempre la clase mayoritaria (0.698), pero esto no debe leerse como que el modelo no capturó ninguna señal: la exactitud es una métrica engañosa bajo el desbalance de clases presente en este problema (*Impacto Alto* representa solo ~30% del conjunto de prueba). El modelo entrenado supera la exactitud esperada de un clasificador aleatorio que respetara esas mismas proporciones (0.578), lo que indica que sí existe algo de señal aprovechable en los predictores utilizados, aunque de magnitud modesta. Este tipo de matiz —donde la exactitud global puede ser engañosa en tareas de clasificación de impacto de noticias con clases desbalanceadas— es consistente con lo señalado en revisiones de la literatura sobre predicción bursátil basada en texto, que recomiendan priorizar precisión y recall sobre la clase de interés en lugar de la exactitud global [2].
+
+**Sobre la señal (débil) encontrada en el texto.** El análisis de independencia de la sección de Métodos mostró que ni el cambio porcentual del índice ni el sentimiento reportado se relacionan de forma significativa con `Impact_Level` en este conjunto de datos. Esto contrasta con Khedr et al. [1], quienes sí encontraron una relación estadísticamente significativa entre el sentimiento de noticias financieras y el movimiento del mercado en su propio conjunto de datos. Esta discrepancia sugiere que la señal disponible depende fuertemente de cómo fue construido y etiquetado cada conjunto de datos en particular — un punto también señalado por Ashtiani y Raahemi [3] en su revisión sistemática, donde identifican la calidad y especificidad del corpus de noticias como uno de los principales factores que determinan el desempeño alcanzable, más allá del algoritmo de clasificación elegido. En nuestro caso, el hecho de que el modelo sí supere al azar ponderado, pese a que ninguna variable estructurada se relacione con el objetivo, sugiere que la señal residual capturada proviene específicamente del contenido semántico del titular y no de las variables numéricas acompañantes.
+
+**Sobre los términos discriminantes.** Los términos con mayor razón de tasas hacia *Impacto Alto* remiten a lenguaje de eventos dramáticos o negativos (*scandal*, *losses*, *falls*, *restrictions*) y a referencias a mercados asiáticos (*china*, *shanghai*, *composite*), mientras que los asociados con *Impacto Otro/Bajo* remiten a lenguaje de política monetaria en tono moderado (*dovish*, *cuts*, *rate*, *federal*, *reserve*). Esta forma de extraer palabras clave a partir de los parámetros del modelo es conceptualmente análoga al uso de técnicas de interpretación local (LIME) sobre clasificadores de titulares financieros propuesto por Karzanov [7], quien igualmente encuentra que palabras cargadas semánticamente hacia eventos disruptivos se asocian con mayor probabilidad de anticipar un movimiento relevante del mercado — un patrón cualitativamente similar al observado aquí, aunque en nuestro caso con una magnitud de asociación bastante menor (razón de tasas máxima ≈2.0 frente a los efectos más marcados reportados en ese trabajo), consistente con la señal débil identificada en el análisis de independencia.
+
+**Implicaciones para un inversionista.** El recall obtenido (0.293) implica que el modelo pasa por alto a más de dos de cada tres noticias de impacto alto real (123 falsos negativos de 174 casos). Este es, en un contexto de inversión, el error más costoso: deja al inversionista sin margen de reacción ante un movimiento real de mercado. La precisión obtenida (0.362) implica, además, que casi dos de cada tres alertas de "Impacto Alto" emitidas por el modelo son falsas alarmas (90 falsos positivos de 141 alertas), lo que induciría reacciones innecesarias —y sus correspondientes costos de transacción— si se actuara automáticamente sobre cada alerta. Dado que aquí el error más costoso (falso negativo) es también el que el modelo comete con mayor frecuencia, el clasificador en su forma actual debería usarse, cuando mucho, como una señal complementaria de bajo costo dentro de un sistema de monitoreo más amplio, nunca como fuente única de decisión.
 
 ## Conclusiones
 
-<!-- TODO: síntesis de hallazgos principales, limitaciones del enfoque
-     y posibles extensiones. -->
+Implementamos un clasificador naïve Bayes con distribución Poisson para predecir el nivel de impacto de noticias financieras a partir de sus titulares, combinando minería de texto con variables de sentimiento, sector e índice bursátil. El modelo obtuvo un desempeño modesto (exactitud 0.630, F1 0.324 para la clase *Impacto Alto*), por debajo de la estrategia trivial de predecir siempre la clase mayoritaria, aunque por encima de un clasificador aleatorio que respetara las proporciones reales de clase.
+
+Un hallazgo relevante de este trabajo es que el desempeño limitado no parece atribuible al pipeline de modelado en sí: un análisis de independencia mostró que ni el cambio porcentual del índice bursátil ni el sentimiento reportado se relacionan de forma significativa con `Impact_Level` (p = 0.501 y p = 0.912, respectivamente). Esto sugiere que, en este conjunto de datos, la variable objetivo contiene relativamente poca señal explicable por las variables estructuradas disponibles, y que la señal residual que sí logra capturar el modelo probablemente proviene del contenido semántico del titular — aunque de forma débil, como lo confirma que incluso los términos más discriminantes apenas alcanzan una razón de tasas de ~2x entre clases, un resultado que discutimos a la luz de trabajos con hallazgos tanto convergentes [7] como divergentes [1] respecto al nuestro.
+
+**Limitaciones.** El vocabulario retenido tras la limpieza es reducido, lo que limita la expresividad del modelo. La evaluación se basa en una sola partición entrenamiento/prueba en lugar de validación cruzada, por lo que las métricas reportadas pueden tener varianza no cuantificada. Adicionalmente, algunos titulares del conjunto parecen generados con patrones repetitivos y con asociaciones entre compañía mencionada y evento poco consistentes, lo que podría explicar en parte la débil relación entre texto y variable objetivo.
+
+**Implicación práctica.** Con una precisión de 0.362 y un recall de 0.293, este clasificador no debería usarse como señal única para decisiones automatizadas de inversión: generaría más falsas alarmas que aciertos, y pasaría por alto la mayoría de los eventos de alto impacto real. Su valor está más bien como una señal complementaria de bajo costo dentro de un sistema de monitoreo más amplio, no como reemplazo del análisis fundamental o cuantitativo tradicional.
+
+**Trabajo futuro propio.** Como siguientes pasos para este proyecto, recomendamos: (i) validación cruzada k-fold para estimar la variabilidad de las métricas reportadas; (ii) incorporar n-gramas, y no solo palabras individuales, para capturar frases con más carga informativa (p. ej. "interest rate cut" en lugar de los tres tokens por separado); (iii) explorar modelos que no impongan una única distribución (Poisson) a variables de naturaleza distinta —conteos de palabras frente a variables categóricas— dado que esa es una simplificación conocida del enfoque aquí utilizado.
+
+**Recomendaciones para estudios relacionados.** Con base en lo aprendido en este trabajo, recomendamos a quienes emprendan estudios similares de clasificación de impacto de noticias financieras: (i) realizar explícitamente un análisis de independencia entre la variable objetivo y las variables estructuradas disponibles antes de invertir en un pipeline de NLP, como se hizo en este trabajo — esto permite anticipar si el desempeño modesto de un modelo refleja una limitación real de los datos y no necesariamente del método de clasificación; (ii) priorizar, cuando sea posible, conjuntos de datos donde la etiqueta de impacto se derive de una regla verificable (por ejemplo, un umbral sobre el cambio real del índice) en lugar de una categoría asignada sin trazabilidad clara hacia las demás variables, dado que esto último puede introducir ruido irreducible en la variable objetivo; y (iii) reportar siempre una comparación contra líneas base triviales (clase mayoritaria, azar ponderado por proporciones), ya que la exactitud por sí sola puede ser engañosa en problemas desbalanceados, un punto que coincide con lo señalado en la literatura de predicción bursátil basada en noticias [2], [3].
 
 ## Referencias
 
-Silge, J., & Robinson, D. (2017). *Text Mining with R: A Tidy Approach*. O'Reilly Media. https://www.tidytextmining.com/
+[1] A. E. Khedr, S. E. Salama, and N. Yaseen, "Predicting stock market behavior using data mining technique and news sentiment analysis," *International Journal of Intelligent Systems and Applications*, vol. 9, no. 7, pp. 22–30, Jul. 2017.
 
-Wickham, H. (2023). *stringr: Simple, Consistent Wrappers for Common String Operations*. https://stringr.tidyverse.org/
+[2] S. Usmani and J. A. Shamsi, "News sensitive stock market prediction: literature review and suggestions," *PeerJ Computer Science*, vol. 7, e490, May 2021.
 
-<!-- TODO: agregar referencia de la fuente/origen del dataset
-     financial_news.csv y cualquier otra literatura citada. -->
+[3] M. N. Ashtiani and B. Raahemi, "News-based intelligent prediction of financial markets using text mining and machine learning: A systematic literature review," *Expert Systems with Applications*, vol. 217, art. 119509, 2023.
+
+[4] H. Wickham, *stringr: Simple, Consistent Wrappers for Common String Operations*, R package. [Online]. Available: https://stringr.tidyverse.org/
+
+[5] J. Silge and D. Robinson, *Text Mining with R: A Tidy Approach*. Sebastopol, CA: O'Reilly Media, 2017. [Online]. Available: https://www.tidytextmining.com/
+
+[6] M. Majka, *naivebayes: High Performance Implementation of the Naive Bayes Algorithm*, R package. [Online]. Available: https://CRAN.R-project.org/package=naivebayes
+
+[7] D. Karzanov, "Headline-Driven Classification and Local Interpretation for Market Outperformance and Low-Risk Stock Prediction," *Computational Economics*, 2023, doi: 10.1007/s10614-023-10449-5.
 
 ---
 
