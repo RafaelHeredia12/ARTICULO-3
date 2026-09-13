@@ -25,6 +25,8 @@ library(knitr)
 library(readr)
 library(tidyr)
 library(naivebayes)
+library(ggplot2)
+library(plotly)
 
 features   <- readRDS("../data/processed/features_split.rds")
 resultados <- readRDS("../data/processed/resultados_modelo.rds")
@@ -105,6 +107,8 @@ Una prueba ANOVA de una vía no encuentra diferencias estadísticamente signific
 
 ```{r diag-chisq}
 #| echo: false
+#| fig-width: 7
+#| fig-height: 4
 tabla_sent <- table(raw$Impact_Level, raw$Sentiment)
 chi_sent <- chisq.test(tabla_sent)
 
@@ -119,6 +123,68 @@ raw |>
 ```
 
 De forma similar, una prueba chi-cuadrada de independencia entre `Impact_Level` y `Sentiment` tampoco rechaza la hipótesis de independencia (χ²(`r chi_sent$parameter`) = `r round(chi_sent$statistic, 3)`, p = `r round(chi_sent$p.value, 3)`). Este diagnóstico se retoma en la sección de Discusión para contextualizar el desempeño del modelo.
+
+```{r}
+#| echo: false
+#| fig-width: 7
+#| fig-height: 4
+#| fig-cap: "Distribución del cambio porcentual absoluto del índice por nivel de impacto"
+```
+raw |>
+  filter(!is.na(Index_Change_Percent)) |>
+  mutate(Impact_Level = factor(Impact_Level, levels = c("Low", "Medium", "High"))) |>
+  ggplot(aes(x = Impact_Level, y = abs(Index_Change_Percent), fill = Impact_Level)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(title = "Cambio porcentual absoluto del índice por nivel de impacto",
+       x = "Nivel de impacto", y = "Cambio porcentual absoluto (%)") +
+  theme_minimal() + theme(legend.position = "none")
+```
+
+```{r diag-viz-sentimiento}
+#| echo: false
+#| fig-width: 7
+#| fig-height: 4
+
+raw |>
+  filter(!is.na(Sentiment)) |>
+  count(Impact_Level, Sentiment) |>
+  group_by(Impact_Level) |>
+  mutate(prop = n / sum(n)) |>
+  ggplot(aes(x = Impact_Level, y = prop, fill = Sentiment)) +
+  geom_col(position = "dodge") +
+  labs(title = "Proporción de sentimiento por nivel de impacto",
+       x = "Nivel de impacto", y = "Proporción") +
+  theme_minimal()
+
+
+```
+
+
+```{r}
+#| echo: false
+#| fig-width: 7
+#| fig-height: 4
+#| out-width: "100%"
+plot_ly(
+  data = raw |> filter(!is.na(Index_Change_Percent)),
+  x = ~Index_Change_Percent, y = ~Trading_Volume,
+  z = ~as.numeric(factor(Impact_Level, levels = c("Low", "Medium", "High"))),
+  color = ~Impact_Level, type = "scatter3d", mode = "markers",
+  marker = list(size = 3, opacity = 0.6)) |>
+  layout(scene = list(
+    xaxis = list(title = "Cambio % del índice"),
+    yaxis = list(title = "Volumen de operación"),
+    zaxis = list(title = "Impact_Level")))
+
+) |>
+  layout(scene = list(
+    xaxis = list(title = "Cambio % del índice"),
+    yaxis = list(title = "Volumen de operación"),
+    zaxis = list(title = "Impact_Level")),
+    autosize = TRUE) |>
+  plotly::config(displayModeBar = FALSE)
+
+```
 
 ### Preprocesamiento y recodificación del objetivo
 
@@ -140,6 +206,7 @@ La matriz combinada se dividió en un conjunto de entrenamiento (80%) y uno de p
 
 Se entrenó un clasificador naïve Bayes con la función `naive_bayes()` del paquete `naivebayes` [6]. Dado que todos los predictores son conteos no negativos (frecuencia de palabras y variables dummy 0/1), se utilizó `usepoisson = TRUE`: cada predictor se modela con una distribución Poisson condicional a la clase, en lugar del supuesto Gaussiano por defecto — mucho menos adecuado para una matriz mayormente dispersa (valores cero). Se aplicó suavizado de Laplace (`laplace = 1`) para evitar tasas estimadas de cero en palabras del vocabulario ausentes en alguna clase durante el entrenamiento. Por una limitación de la función genérica `naive_bayes()` (que internamente coacciona el insumo a `data.frame` y por tanto no admite matrices dispersas de clase `dgCMatrix`), la matriz de predictores se convirtió a una matriz densa de tipo entero antes del ajuste; dado el tamaño reducido del vocabulario retenido, esta conversión no representó un costo computacional relevante.
 
+
 ## Resultados
 
 A continuación se presentan los resultados obtenidos al evaluar el clasificador naïve Bayes sobre el conjunto de prueba (n = 576), junto con los términos y variables que el modelo identificó como más discriminantes entre clases.
@@ -151,6 +218,16 @@ resultados$matriz_confusion |>
 
 resultados$metricas |>
   kable(caption = "Métricas de desempeño para la clase Impacto Alto")
+
+as.data.frame(resultados$matriz_confusion) |>
+  ggplot(aes(x = Predicho, y = Real, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 5) +
+  scale_fill_gradient(low = "#f7fbff", high = "#08519c") +
+  labs(title = "Matriz de confusión (test set, n = 576)") +
+  theme_minimal()
+
+
 ```
 
 ```{r resultados-baselines}
@@ -169,6 +246,21 @@ tibble(termino = names(resultados$top_alto), log_ratio = round(resultados$top_al
 
 tibble(termino = names(resultados$top_bajo), log_ratio = round(resultados$top_bajo, 3)) |>
   kable(caption = "Top 15 términos/variables asociados con Impacto Otro/Bajo (razón de tasas log)")
+```
+
+
+```{r resultados-viz-terminos}
+#| echo: false
+bind_rows(
+  tibble(termino = names(resultados$top_alto), log_ratio = as.numeric(resultados$top_alto), clase = "Impacto Alto"),
+  tibble(termino = names(resultados$top_bajo), log_ratio = as.numeric(resultados$top_bajo), clase = "Impacto Otro/Bajo")
+) |>
+  mutate(termino = forcats::fct_reorder(termino, log_ratio)) |>
+  ggplot(aes(x = termino, y = log_ratio, fill = clase)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Términos más discriminantes por razón de tasas (log)", x = NULL, y = "Log-ratio") +
+  theme_minimal()
 ```
 
 De los 174 titulares de *Impacto Alto* en el conjunto de prueba, el modelo clasificó correctamente 51 y de forma incorrecta 123. De los 402 titulares de *Impacto Otro/Bajo*, 312 se clasificaron correctamente y 90 de forma incorrecta.
