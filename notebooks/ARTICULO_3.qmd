@@ -200,7 +200,7 @@ La matriz combinada se dividió en un conjunto de entrenamiento (80%) y uno de p
 Se entrenó un clasificador naïve Bayes con la función `naive_bayes()` del paquete `naivebayes` [6]. Dado que todos los predictores son conteos no negativos (frecuencia de palabras y variables dummy 0/1), se utilizó `usepoisson = TRUE`: cada predictor se modela con una distribución Poisson condicional a la clase, en lugar del supuesto Gaussiano por defecto — mucho menos adecuado para una matriz mayormente dispersa (valores cero). Se aplicó suavizado de Laplace (`laplace = 1`) para evitar tasas estimadas de cero en palabras del vocabulario ausentes en alguna clase durante el entrenamiento. Por una limitación de la función genérica `naive_bayes()` (que internamente coacciona el insumo a `data.frame` y por tanto no admite matrices dispersas de clase `dgCMatrix`), la matriz de predictores se convirtió a una matriz densa de tipo entero antes del ajuste; dado el tamaño reducido del vocabulario retenido, esta conversión no representó un costo computacional relevante.
 
 
-## Resultados
+## Aplicación y resultados
 
 A continuación se presentan los resultados obtenidos al evaluar el clasificador naïve Bayes sobre el conjunto de prueba (n = 576), junto con los términos y variables que el modelo identificó como más discriminantes entre clases.
 
