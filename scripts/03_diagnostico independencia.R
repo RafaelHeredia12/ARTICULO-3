@@ -10,10 +10,16 @@
 # NOTA: si lo corres suelto en la consola (no dentro del .qmd,
 # donde estas librerías ya están cargadas en el chunk de setup)
 # necesitas cargar esto primero:
+library(tidyr)
 library(readr)
 library(dplyr)
 library(knitr)
-library(tidyr)
+library(ggplot2)
+library(plotly)
+#install.packages("plotly")
+
+# Al inicio del script, junto a las demás librerías:
+dir.create("outputs/figures", showWarnings = FALSE, recursive = TRUE) 
 
 # Ruta sin "../" porque, igual que 01_limpieza.R y 02_modelo.R, este
 # script se corre desde la raíz del proyecto (vía el .Rproj). Si en
@@ -58,3 +64,45 @@ raw |>
 # ---- 3. Prueba chi-cuadrada: Impact_Level x Sentiment ----------------------
 tabla_sent <- table(raw$Impact_Level, raw$Sentiment)
 chisq.test(tabla_sent)  # revisar p-value
+
+
+# ---- 4. Visualización: cambio de índice por nivel de impacto --------------
+p1 <- raw %>%
+  filter(!is.na(Index_Change_Percent)) %>%
+  mutate(Impact_Level = factor(Impact_Level, levels = c("Low", "Medium", "High"))) %>%
+  ggplot(aes(x = Impact_Level, y = abs(Index_Change_Percent), fill = Impact_Level)) +
+  geom_boxplot(alpha = 0.7, outlier.alpha = 0.4) +
+  labs(title = "Cambio porcentual absoluto del índice por nivel de impacto",
+       x = "Nivel de impacto", y = "Cambio porcentual absoluto (%)") +
+  theme_minimal() + theme(legend.position = "none")
+
+print(p1)
+ggsave("outputs/figures/01_boxplot_cambio_indice.png", p1, width = 7, height = 5, dpi = 300)
+
+# ---- 5. Visualización: sentimiento por nivel de impacto --------------------
+p2 <- raw %>%
+  filter(!is.na(Sentiment)) %>%
+  count(Impact_Level, Sentiment) %>%
+  group_by(Impact_Level) %>%
+  mutate(prop = n / sum(n)) %>%
+  ggplot(aes(x = Impact_Level, y = prop, fill = Sentiment)) +
+  geom_col(position = "dodge") +
+  labs(title = "Proporción de sentimiento por nivel de impacto",
+       x = "Nivel de impacto", y = "Proporción") +
+  theme_minimal()
+
+print(p2)
+ggsave("outputs/figures/02_barras_sentimiento.png", p2, width = 7, height = 5, dpi = 300)
+
+
+# ---- 6. Visualización 3D: índice, volumen e impacto -----------------------
+plot_ly(
+  data = raw %>% filter(!is.na(Index_Change_Percent)),
+  x = ~Index_Change_Percent, y = ~Trading_Volume,
+  z = ~as.numeric(factor(Impact_Level, levels = c("Low", "Medium", "High"))),
+  color = ~Impact_Level, type = "scatter3d", mode = "markers",
+  marker = list(size = 3, opacity = 0.6)) %>%
+  layout(scene = list(
+    xaxis = list(title = "Cambio % del índice"),
+    yaxis = list(title = "Volumen de operación"),
+    zaxis = list(title = "Impact_Level")))

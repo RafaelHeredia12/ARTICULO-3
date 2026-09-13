@@ -21,6 +21,10 @@ test_x  <- features$test_x
 train_y <- features$train_y
 test_y  <- features$test_y
 
+# Al inicio del script:
+dir.create("outputs/figures", showWarnings = FALSE, recursive = TRUE)
+
+
 # ---- 1. Entrenamiento ----------------------------------------------------
 # naive_bayes() (a diferencia de las funciones especializadas como
 # poisson_naive_bayes()) NO acepta matrices dispersas: internamente
@@ -65,6 +69,18 @@ matriz_confusion <- table(Real = test_y, Predicho = pred_clase)
 cat("Matriz de confusión:\n")
 print(matriz_confusion)
 
+p_confusion <- as.data.frame(matriz_confusion) %>%
+  ggplot(aes(x = Predicho, y = Real, fill = Freq)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 5) +
+  scale_fill_gradient(low = "#f7fbff", high = "#08519c") +
+  labs(title = "Matriz de confusión (test set, n = 576)") +
+  theme_minimal()
+
+
+print(p_confusion)
+ggsave("outputs/figures/04_matriz_confusion.png", p_confusion, width = 6, height = 5, dpi = 300) 
+
 # ---- 4. Métricas de desempeño -----------------------------------------------
 # Clase positiva: "Impacto Alto" (la que interesa detectar a tiempo)
 clase_pos <- "Impacto Alto"
@@ -101,6 +117,22 @@ log_ratio <- log(lambda_mat[, "Impacto Alto"]) - log(lambda_mat[, "Impacto Otro/
 top_alto <- sort(log_ratio, decreasing = TRUE)[1:15]
 top_bajo <- sort(log_ratio, decreasing = FALSE)[1:15]
 
+top_terms_df <- bind_rows(
+  tibble(termino = names(top_alto), log_ratio = as.numeric(top_alto), clase = "Impacto Alto"),
+  tibble(termino = names(top_bajo), log_ratio = as.numeric(top_bajo), clase = "Impacto Otro/Bajo")
+)
+
+p_terminos <- top_terms_df %>%
+  mutate(termino = forcats::fct_reorder(termino, log_ratio)) %>%
+  ggplot(aes(x = termino, y = log_ratio, fill = clase)) +
+  geom_col() + 
+  coord_flip() +
+  labs(title = "Términos más discriminantes por razón de tasas (log)", x = NULL, y = "Log-ratio") +
+  theme_minimal()
+
+print(p_terminos)
+ggsave("outputs/figures/03_terminos_discriminantes.png", p_terminos, width = 7, height = 6, dpi = 300)
+
 cat("\nTop 15 términos/variables asociados con Impacto Alto:\n")
 print(round(top_alto, 3))
 
@@ -120,3 +152,5 @@ saveRDS(
   ),
   "data/processed/resultados_modelo.rds"
 )
+
+

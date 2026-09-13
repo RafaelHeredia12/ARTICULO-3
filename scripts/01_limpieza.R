@@ -106,3 +106,4 @@ test_y  <- target[-idx_train]
 dir.create("data/processed", showWarnings = FALSE, recursive = TRUE)
 saveRDS(list(train_x = train_x, test_x = test_x, train_y = train_y, test_y = test_y),
         "data/processed/features_split.rds")
+
