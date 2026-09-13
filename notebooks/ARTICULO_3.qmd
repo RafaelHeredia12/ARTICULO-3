@@ -129,7 +129,6 @@ De forma similar, una prueba chi-cuadrada de independencia entre `Impact_Level` 
 #| fig-width: 7
 #| fig-height: 4
 #| fig-cap: "Distribución del cambio porcentual absoluto del índice por nivel de impacto"
-```
 raw |>
   filter(!is.na(Index_Change_Percent)) |>
   mutate(Impact_Level = factor(Impact_Level, levels = c("Low", "Medium", "High"))) |>
@@ -170,12 +169,7 @@ plot_ly(
   x = ~Index_Change_Percent, y = ~Trading_Volume,
   z = ~as.numeric(factor(Impact_Level, levels = c("Low", "Medium", "High"))),
   color = ~Impact_Level, type = "scatter3d", mode = "markers",
-  marker = list(size = 3, opacity = 0.6)) |>
-  layout(scene = list(
-    xaxis = list(title = "Cambio % del índice"),
-    yaxis = list(title = "Volumen de operación"),
-    zaxis = list(title = "Impact_Level")))
-
+  marker = list(size = 3, opacity = 0.6)
 ) |>
   layout(scene = list(
     xaxis = list(title = "Cambio % del índice"),
@@ -183,7 +177,6 @@ plot_ly(
     zaxis = list(title = "Impact_Level")),
     autosize = TRUE) |>
   plotly::config(displayModeBar = FALSE)
-
 ```
 
 ### Preprocesamiento y recodificación del objetivo
